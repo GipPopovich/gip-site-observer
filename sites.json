@@ -1,0 +1,23 @@
+{
+  "defaults": {
+    "maxPagesPerSite": 30,
+    "timeoutMs": 45000,
+    "waitAfterLoadMs": 1500,
+    "includePatterns": [],
+    "excludePatterns": [
+      "/wp-admin",
+      "/wp-login",
+      "?add-to-cart=",
+      "/cart",
+      "/checkout",
+      "/my-account"
+    ]
+  },
+  "sites": [
+    {
+      "name": "Neetly",
+      "url": "https://neetly.it/",
+      "sitemap": "https://neetly.it/wp-sitemap.xml"
+    }
+  ]
+}
