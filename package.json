@@ -1,12 +1,12 @@
 {
   "name": "gip-site-observer",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "capture": "node capture.mjs"
+    "capture": "node capture.mjs && node classify.mjs"
   },
   "dependencies": {
-    "playwright": "^1.54.0"
+    "playwright": "1.54.0"
   }
 }
