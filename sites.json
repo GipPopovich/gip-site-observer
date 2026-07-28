@@ -1,6 +1,6 @@
 {
   "defaults": {
-    "maxPagesPerSite": 300,
+    "maxPagesPerSite": 500,
     "candidateTimeoutMs": 8000,
     "waitAfterLoadMs": 300
   },
