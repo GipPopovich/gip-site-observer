@@ -40,6 +40,11 @@
     {
       "name": "L Italian Art Ecwid",
       "url": "https://litalianart.company.site/"
+    },
+    {
+      "name": "FuturVibe",
+      "url": "https://futurvibe.it/",
+      "sitemap": "https://futurvibe.it/wp-sitemap.xml"
     }
   ]
 }
