@@ -1,249 +1,208 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import dns from 'node:dns/promises';
-import { chromium, devices } from 'playwright';
+import { chromium } from 'playwright';
 
-const OBSERVER_VERSION = '1.0.0';
+const OBSERVER_VERSION = '1.0.0-preview-full-text-crawl';
 const config = JSON.parse(await fs.readFile('sites.json', 'utf8'));
+const startUrl = config.sites?.[0]?.url;
+if (!startUrl) throw new Error('Missing start URL in sites.json');
+
+const start = new URL(startUrl);
+const maxPages = config.defaults?.maxPagesPerSite ?? 500;
+const timeoutMs = config.defaults?.candidateTimeoutMs ?? 30000;
+const waitAfterLoadMs = config.defaults?.waitAfterLoadMs ?? 600;
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-const root = path.resolve('site-packs', stamp);
-await fs.mkdir(root, { recursive: true });
+const root = path.resolve('site-packs', stamp, 'futurvibe-preview-full-text-crawl');
+const pagesDir = path.join(root, 'pages');
+await fs.mkdir(pagesDir, { recursive: true });
 
-const defaults = config.defaults ?? {};
-const candidateTimeoutMs = defaults.candidateTimeoutMs ?? 30000;
-const waitAfterCommitMs = defaults.waitAfterCommitMs ?? 6000;
-const waitAfterLoadMs = defaults.waitAfterLoadMs ?? 2000;
+const excludedPathPrefixes = [
+  '/wp-admin', '/wp-login', '/wp-json', '/xmlrpc.php',
+  '/cart', '/checkout', '/wp-content/', '/wp-includes/'
+];
+const excludedFragments = ['/feed/', '/comments/feed/', '/trackback/'];
+const excludedExtensions = /\.(?:avif|bmp|css|csv|docx?|eot|gif|ico|jpe?g|js|json|map|mp3|mp4|mov|ogg|pdf|png|pptx?|rar|rss|svg|tar|tiff?|ttf|txt|wav|webm|webp|woff2?|xlsx?|xml|zip)$/i;
 
-const slug = (value) => value
-  .toLowerCase()
-  .normalize('NFKD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/[^a-z0-9]+/g, '-')
-  .replace(/^-|-$/g, '') || 'site';
-
-const unique = (items) => [...new Set(items.filter(Boolean))];
-const manifest = {
-  observerVersion: OBSERVER_VERSION,
-  generatedAt: new Date().toISOString(),
-  sites: []
-};
-
-async function inspect(page) {
-  return page.evaluate(() => {
-    const texts = (selector) => [...document.querySelectorAll(selector)]
-      .map((el) => el.textContent?.trim().replace(/\s+/g, ' '))
-      .filter(Boolean);
-    const attr = (selector, name) => document.querySelector(selector)?.getAttribute(name) ?? '';
-    const links = [...document.querySelectorAll('a[href]')].map((a) => ({
-      text: a.textContent?.trim().replace(/\s+/g, ' ').slice(0, 180) ?? '',
-      href: a.href
-    }));
-    const images = [...document.querySelectorAll('img')].map((img) => ({
-      src: img.currentSrc || img.src || '',
-      alt: img.getAttribute('alt') ?? '',
-      width: img.naturalWidth || 0,
-      height: img.naturalHeight || 0
-    }));
-    const forms = [...document.querySelectorAll('form')].map((form, index) => ({
-      index: index + 1,
-      action: form.action || '',
-      method: (form.method || 'get').toUpperCase(),
-      fields: [...form.querySelectorAll('input, select, textarea, button')].map((field) => ({
-        tag: field.tagName.toLowerCase(),
-        type: field.getAttribute('type') || '',
-        name: field.getAttribute('name') || '',
-        label: field.getAttribute('aria-label') || field.getAttribute('placeholder') || field.textContent?.trim().slice(0, 120) || ''
-      }))
-    }));
-    return {
-      title: document.title,
-      metaDescription: attr('meta[name="description"]', 'content'),
-      canonical: attr('link[rel="canonical"]', 'href'),
-      language: document.documentElement.lang || '',
-      h1: texts('h1'),
-      h2: texts('h2'),
-      visibleText: document.body?.innerText?.replace(/\n{3,}/g, '\n\n').slice(0, 100000) ?? '',
-      html: document.documentElement.outerHTML,
-      links,
-      images,
-      forms
-    };
-  });
+function normalizeUrl(raw) {
+  try {
+    const u = new URL(raw, startUrl);
+    if (!['http:', 'https:'].includes(u.protocol)) return null;
+    if (u.hostname !== start.hostname) return null;
+    u.protocol = 'https:';
+    u.hash = '';
+    u.search = '';
+    let pathname = u.pathname.replace(/\/{2,}/g, '/');
+    if (excludedPathPrefixes.some((prefix) => pathname.startsWith(prefix))) return null;
+    if (excludedFragments.some((fragment) => pathname.includes(fragment))) return null;
+    if (excludedExtensions.test(pathname)) return null;
+    if (!pathname.endsWith('/')) pathname += '/';
+    u.pathname = pathname;
+    return u.toString();
+  } catch {
+    return null;
+  }
 }
 
-for (const site of config.sites ?? []) {
-  const checkedAt = new Date().toISOString();
-  const requested = new URL(site.url);
-  const siteDir = path.join(root, slug(site.name || requested.hostname));
-  await fs.mkdir(siteDir, { recursive: true });
+function fileSlug(url, index) {
+  const u = new URL(url);
+  const body = decodeURIComponent(u.pathname)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 110) || 'home';
+  return `${String(index).padStart(4, '0')}-${body}`;
+}
 
+const browser = await chromium.launch({
+  headless: true,
+  args: ['--disable-blink-features=AutomationControlled']
+});
+const context = await browser.newContext({
+  viewport: { width: 1365, height: 900 },
+  ignoreHTTPSErrors: true,
+  locale: 'it-IT',
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+});
+const page = await context.newPage();
+
+const queue = [normalizeUrl(startUrl)];
+const queued = new Set(queue);
+const visited = new Set();
+const records = [];
+
+while (queue.length && records.length < maxPages) {
+  const url = queue.shift();
+  if (!url || visited.has(url)) continue;
+  visited.add(url);
+  const index = records.length + 1;
   const record = {
-    observerVersion: OBSERVER_VERSION,
-    checkedAt,
-    name: site.name,
-    requestedUrl: site.url,
-    sitemap: site.sitemap ?? null,
-    diagnostics: {
-      ipv4: [],
-      ipv6: [],
-      attempts: [],
-      requestFailures: [],
-      consoleErrors: [],
-      pageErrors: []
-    },
-    files: []
+    index,
+    requestedUrl: url,
+    checkedAt: new Date().toISOString(),
+    success: false,
+    status: null,
+    finalUrl: null,
+    title: '',
+    metaDescription: '',
+    canonical: '',
+    robots: '',
+    language: '',
+    h1: [],
+    h2: [],
+    forms: 0,
+    images: 0,
+    missingAltImages: 0,
+    internalLinksFound: 0,
+    textLength: 0,
+    error: null
   };
 
   try {
-    record.diagnostics.ipv4 = await dns.resolve4(requested.hostname).catch(() => []);
-    record.diagnostics.ipv6 = await dns.resolve6(requested.hostname).catch(() => []);
-
-    const resolverRules = record.diagnostics.ipv4[0]
-      ? `MAP ${requested.hostname} ${record.diagnostics.ipv4[0]},MAP www.${requested.hostname} ${record.diagnostics.ipv4[0]}`
-      : null;
-
-    const browser = await chromium.launch({
-      headless: true,
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        ...(resolverRules ? [`--host-resolver-rules=${resolverRules}`] : [])
-      ]
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    await page.waitForTimeout(waitAfterLoadMs);
+    const data = await page.evaluate(() => {
+      const texts = (selector) => [...document.querySelectorAll(selector)]
+        .map((el) => el.textContent?.trim().replace(/\s+/g, ' '))
+        .filter(Boolean);
+      const attr = (selector, name) => document.querySelector(selector)?.getAttribute(name) ?? '';
+      const links = [...document.querySelectorAll('a[href]')].map((a) => a.href);
+      const images = [...document.querySelectorAll('img')].map((img) => ({
+        src: img.currentSrc || img.src || '',
+        alt: img.getAttribute('alt') ?? ''
+      }));
+      return {
+        title: document.title || '',
+        metaDescription: attr('meta[name="description"]', 'content'),
+        canonical: attr('link[rel="canonical"]', 'href'),
+        robots: attr('meta[name="robots"]', 'content'),
+        language: document.documentElement.lang || '',
+        h1: texts('h1'),
+        h2: texts('h2'),
+        visibleText: document.body?.innerText?.replace(/\n{3,}/g, '\n\n') ?? '',
+        links,
+        forms: document.querySelectorAll('form').length,
+        images
+      };
     });
 
-    try {
-      const desktop = await browser.newContext({
-        viewport: { width: 1440, height: 1000 },
-        ignoreHTTPSErrors: true,
-        locale: 'it-IT',
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-      });
-      const page = await desktop.newPage();
+    record.status = response?.status() ?? null;
+    record.finalUrl = page.url();
+    record.title = data.title;
+    record.metaDescription = data.metaDescription;
+    record.canonical = data.canonical;
+    record.robots = data.robots;
+    record.language = data.language;
+    record.h1 = data.h1;
+    record.h2 = data.h2;
+    record.forms = data.forms;
+    record.images = data.images.length;
+    record.missingAltImages = data.images.filter((img) => !img.alt).length;
+    record.textLength = data.visibleText.length;
+    record.success = Boolean(record.status && record.status < 400 && data.visibleText.trim().length > 20);
 
-      page.on('requestfailed', (request) => {
-        if (record.diagnostics.requestFailures.length < 100) {
-          record.diagnostics.requestFailures.push({
-            url: request.url(),
-            error: request.failure()?.errorText || 'UNKNOWN'
-          });
-        }
-      });
-      page.on('console', (message) => {
-        if (message.type() === 'error' && record.diagnostics.consoleErrors.length < 100) {
-          record.diagnostics.consoleErrors.push(message.text().slice(0, 1000));
-        }
-      });
-      page.on('pageerror', (error) => {
-        if (record.diagnostics.pageErrors.length < 100) {
-          record.diagnostics.pageErrors.push(error.message.slice(0, 1000));
-        }
-      });
-
-      const candidates = unique([
-        site.url,
-        `https://www.${requested.hostname}/`,
-        `http://${requested.hostname}/`,
-        `http://www.${requested.hostname}/`
-      ]);
-
-      let response = null;
-      let acceptedUrl = null;
-      const started = Date.now();
-
-      for (const candidate of candidates) {
-        const attempt = { url: candidate, startedAt: new Date().toISOString() };
-        try {
-          response = await page.goto(candidate, { waitUntil: 'commit', timeout: candidateTimeoutMs });
-          attempt.committed = true;
-          attempt.status = response?.status() ?? null;
-        } catch (error) {
-          attempt.committed = false;
-          attempt.error = error.message;
-        }
-
-        await page.waitForTimeout(waitAfterCommitMs).catch(() => {});
-        attempt.finalUrl = page.url();
-        attempt.title = await page.title().catch(() => '');
-        attempt.bodyLength = await page.locator('body').innerText({ timeout: 3000 })
-          .then((text) => text.length)
-          .catch(() => 0);
-        record.diagnostics.attempts.push(attempt);
-
-        if (page.url() !== 'about:blank' && (attempt.bodyLength > 20 || attempt.title)) {
-          acceptedUrl = page.url();
-          break;
-        }
+    const internal = [...new Set(data.links.map(normalizeUrl).filter(Boolean))];
+    record.internalLinksFound = internal.length;
+    for (const link of internal) {
+      if (!visited.has(link) && !queued.has(link) && queued.size < maxPages * 3) {
+        queue.push(link);
+        queued.add(link);
       }
-
-      if (!acceptedUrl) {
-        const partialPath = path.join(siteDir, 'desktop-partial.png');
-        await page.screenshot({ path: partialPath, fullPage: true }).catch(() => {});
-        record.files.push('desktop-partial.png');
-        throw new Error('Nessun tentativo ha prodotto una pagina HTML leggibile.');
-      }
-
-      await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(waitAfterLoadMs);
-      const data = await inspect(page);
-
-      record.finalUrl = acceptedUrl;
-      record.status = response?.status() ?? null;
-      record.ok = response?.ok() ?? null;
-      record.loadMs = Date.now() - started;
-      record.title = data.title;
-      record.metaDescription = data.metaDescription;
-      record.canonical = data.canonical;
-      record.language = data.language;
-      record.h1 = data.h1;
-      record.h2 = data.h2;
-      record.links = data.links;
-      record.images = data.images;
-      record.forms = data.forms;
-      record.missingAltImages = data.images.filter((img) => !img.alt).length;
-
-      await page.screenshot({ path: path.join(siteDir, 'desktop.png'), fullPage: true });
-      await fs.writeFile(path.join(siteDir, 'page.html'), data.html);
-      await fs.writeFile(path.join(siteDir, 'visible-text.txt'), data.visibleText);
-      record.files.push('desktop.png', 'page.html', 'visible-text.txt');
-
-      const mobile = await browser.newContext({
-        ...devices['iPhone 13'],
-        ignoreHTTPSErrors: true,
-        locale: 'it-IT'
-      });
-      const mobilePage = await mobile.newPage();
-      await mobilePage.goto(acceptedUrl, { waitUntil: 'commit', timeout: candidateTimeoutMs }).catch(() => {});
-      await mobilePage.waitForTimeout(waitAfterCommitMs);
-      await mobilePage.screenshot({ path: path.join(siteDir, 'mobile.png'), fullPage: true });
-      record.files.push('mobile.png');
-      await mobile.close();
-      await desktop.close();
-
-      record.success = true;
-      const report = `# ${record.title || site.name}\n\n- URL richiesta: ${site.url}\n- URL finale: ${record.finalUrl}\n- Stato HTTP: ${record.status ?? 'UNKNOWN'}\n- Caricamento: ${record.loadMs} ms\n- Meta description: ${record.metaDescription || '(mancante)'}\n- Canonical: ${record.canonical || '(mancante)'}\n- H1: ${record.h1.join(' | ') || '(mancante)'}\n- H2: ${record.h2.join(' | ') || '(mancante)'}\n- Link: ${record.links.length}\n- Form: ${record.forms.length}\n- Immagini: ${record.images.length}\n- Immagini senza ALT: ${record.missingAltImages}\n`;
-      await fs.writeFile(path.join(siteDir, 'report.md'), report);
-      record.files.push('report.md');
-    } finally {
-      await browser.close();
     }
+
+    const slug = fileSlug(url, index);
+    await fs.writeFile(path.join(pagesDir, `${slug}.txt`), data.visibleText, 'utf8');
+    await fs.writeFile(path.join(pagesDir, `${slug}.json`), JSON.stringify({ ...record, discoveredLinks: internal }, null, 2), 'utf8');
   } catch (error) {
-    record.success = false;
-    record.error = error?.stack || String(error);
-    await fs.writeFile(path.join(siteDir, 'error.txt'), record.error);
-    record.files.push('error.txt');
+    record.error = error?.message || String(error);
   }
 
-  await fs.writeFile(path.join(siteDir, 'metadata.json'), JSON.stringify(record, null, 2));
-  record.files.push('metadata.json');
-  manifest.sites.push(record);
+  records.push(record);
+  console.log(`[${index}/${maxPages}] ${record.success ? 'OK' : 'FAIL'} ${record.status ?? '-'} ${url}`);
 }
 
-manifest.summary = {
-  total: manifest.sites.length,
-  successful: manifest.sites.filter((site) => site.success).length,
-  failed: manifest.sites.filter((site) => !site.success).length
+await context.close();
+await browser.close();
+
+const summary = {
+  observerVersion: OBSERVER_VERSION,
+  generatedAt: new Date().toISOString(),
+  startUrl,
+  maxPages,
+  queuedUniqueUrls: queued.size,
+  visitedPages: records.length,
+  successfulPages: records.filter((r) => r.success).length,
+  failedPages: records.filter((r) => !r.success).length,
+  statusCounts: records.reduce((acc, r) => {
+    const key = String(r.status ?? 'UNKNOWN');
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {}),
+  missingMetaDescriptionPages: records.filter((r) => !r.metaDescription).length,
+  missingH1Pages: records.filter((r) => !r.h1.length).length,
+  canonicalOnTemporaryHostPages: records.filter((r) => r.canonical.includes(start.hostname)).length,
+  totalTextCharacters: records.reduce((sum, r) => sum + r.textLength, 0),
+  records
 };
 
-await fs.writeFile(path.join(root, 'manifest.json'), JSON.stringify(manifest, null, 2));
-const summary = `# Gip Site Observer — Run Summary\n\n- Versione: ${OBSERVER_VERSION}\n- Siti totali: ${manifest.summary.total}\n- Riusciti: ${manifest.summary.successful}\n- Falliti: ${manifest.summary.failed}\n\n${manifest.sites.map((site) => `- ${site.success ? 'OK' : 'FAIL'} — ${site.name}: ${site.finalUrl || site.requestedUrl}`).join('\n')}\n`;
-await fs.writeFile(path.join(root, 'RUN_SUMMARY.md'), summary);
-console.log(JSON.stringify(manifest, null, 2));
+await fs.writeFile(path.join(root, 'manifest.json'), JSON.stringify(summary, null, 2), 'utf8');
+const report = [
+  '# FuturVibe Preview — Full Text Crawl',
+  '',
+  `- URL iniziale: ${startUrl}`,
+  `- URL unici accodati: ${summary.queuedUniqueUrls}`,
+  `- Pagine visitate: ${summary.visitedPages}`,
+  `- Pagine riuscite: ${summary.successfulPages}`,
+  `- Pagine fallite: ${summary.failedPages}`,
+  `- Stati HTTP: ${JSON.stringify(summary.statusCounts)}`,
+  `- Pagine senza meta description: ${summary.missingMetaDescriptionPages}`,
+  `- Pagine senza H1: ${summary.missingH1Pages}`,
+  `- Canonical ancora sul dominio temporaneo: ${summary.canonicalOnTemporaryHostPages}`,
+  `- Caratteri di testo letti: ${summary.totalTextCharacters}`,
+  '',
+  '## Fallimenti',
+  ...records.filter((r) => !r.success).map((r) => `- ${r.status ?? 'UNKNOWN'} — ${r.requestedUrl} — ${r.error ?? ''}`),
+  ''
+].join('\n');
+await fs.writeFile(path.join(root, 'RUN_SUMMARY.md'), report, 'utf8');
+console.log(JSON.stringify({ ...summary, records: undefined }, null, 2));
