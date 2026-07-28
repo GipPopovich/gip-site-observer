@@ -2,7 +2,9 @@
   "defaults": {
     "maxPagesPerSite": 30,
     "timeoutMs": 45000,
-    "waitAfterLoadMs": 1500,
+    "candidateTimeoutMs": 30000,
+    "waitAfterCommitMs": 6000,
+    "waitAfterLoadMs": 2000,
     "includePatterns": [],
     "excludePatterns": [
       "/wp-admin",
@@ -18,6 +20,14 @@
       "name": "Neetly",
       "url": "https://neetly.it/",
       "sitemap": "https://neetly.it/wp-sitemap.xml"
+    },
+    {
+      "name": "L Italian Art",
+      "url": "https://litalian.art/"
+    },
+    {
+      "name": "L Italian Art Ecwid",
+      "url": "https://litalianart.company.site/"
     }
   ]
 }
