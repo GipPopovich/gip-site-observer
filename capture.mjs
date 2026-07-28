@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
 
-const OBSERVER_VERSION = '1.0.0-preview-full-text-crawl';
+const OBSERVER_VERSION = '1.0.1-preview-full-text-crawl';
 const config = JSON.parse(await fs.readFile('sites.json', 'utf8'));
 const startUrl = config.sites?.[0]?.url;
 if (!startUrl) throw new Error('Missing start URL in sites.json');
@@ -10,7 +10,7 @@ if (!startUrl) throw new Error('Missing start URL in sites.json');
 const start = new URL(startUrl);
 const maxPages = config.defaults?.maxPagesPerSite ?? 500;
 const timeoutMs = config.defaults?.candidateTimeoutMs ?? 30000;
-const waitAfterLoadMs = config.defaults?.waitAfterLoadMs ?? 600;
+const waitAfterLoadMs = config.defaults?.waitAfterLoadMs ?? 700;
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const root = path.resolve('site-packs', stamp, 'futurvibe-preview-full-text-crawl');
 const pagesDir = path.join(root, 'pages');
@@ -99,8 +99,15 @@ while (queue.length && records.length < maxPages) {
   };
 
   try {
-    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    let response = null;
+    try {
+      response = await page.goto(url, { waitUntil: 'commit', timeout: timeoutMs });
+    } catch (navigationError) {
+      record.error = navigationError?.message || String(navigationError);
+    }
     await page.waitForTimeout(waitAfterLoadMs);
+    await page.locator('body').waitFor({ state: 'attached', timeout: 5000 }).catch(() => {});
+
     const data = await page.evaluate(() => {
       const texts = (selector) => [...document.querySelectorAll(selector)]
         .map((el) => el.textContent?.trim().replace(/\s+/g, ' '))
@@ -139,7 +146,7 @@ while (queue.length && records.length < maxPages) {
     record.images = data.images.length;
     record.missingAltImages = data.images.filter((img) => !img.alt).length;
     record.textLength = data.visibleText.length;
-    record.success = Boolean(record.status && record.status < 400 && data.visibleText.trim().length > 20);
+    record.success = Boolean(data.visibleText.trim().length > 20 && page.url() !== 'about:blank' && (!record.status || record.status < 400));
 
     const internal = [...new Set(data.links.map(normalizeUrl).filter(Boolean))];
     record.internalLinksFound = internal.length;
@@ -154,7 +161,7 @@ while (queue.length && records.length < maxPages) {
     await fs.writeFile(path.join(pagesDir, `${slug}.txt`), data.visibleText, 'utf8');
     await fs.writeFile(path.join(pagesDir, `${slug}.json`), JSON.stringify({ ...record, discoveredLinks: internal }, null, 2), 'utf8');
   } catch (error) {
-    record.error = error?.message || String(error);
+    record.error = [record.error, error?.message || String(error)].filter(Boolean).join(' | ');
   }
 
   records.push(record);
@@ -180,7 +187,7 @@ const summary = {
   }, {}),
   missingMetaDescriptionPages: records.filter((r) => !r.metaDescription).length,
   missingH1Pages: records.filter((r) => !r.h1.length).length,
-  canonicalOnTemporaryHostPages: records.filter((r) => r.canonical.includes(start.hostname)).length,
+  canonicalOnTemporaryHostPages: records.filter((r) => (r.canonical || '').includes(start.hostname)).length,
   totalTextCharacters: records.reduce((sum, r) => sum + r.textLength, 0),
   records
 };
