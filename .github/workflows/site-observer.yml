@@ -33,7 +33,11 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Capture configured sites
-        run: npm run capture
+        shell: bash
+        run: |
+          mkdir -p site-packs
+          set -o pipefail
+          npm run capture 2>&1 | tee site-packs/crawl.log
       - name: Upload verified site packs
         if: always()
         uses: actions/upload-artifact@v4
