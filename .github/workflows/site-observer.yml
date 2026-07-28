@@ -3,9 +3,21 @@ name: Gip Site Observer
 on:
   push:
     branches: [main]
+    paths:
+      - 'capture.mjs'
+      - 'sites.json'
+      - 'package.json'
+      - '.github/workflows/site-observer.yml'
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gip-site-observer-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   observe:
@@ -16,11 +28,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
-      - run: npx playwright install --with-deps chromium
-      - run: npm run capture
-      - uses: actions/upload-artifact@v4
+      - name: Install dependencies
+        run: npm install
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Capture configured sites
+        run: npm run capture
+      - name: Upload verified site packs
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: gip-site-packs
           path: site-packs/
+          if-no-files-found: error
           retention-days: 30
