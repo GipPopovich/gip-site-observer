@@ -1,11 +1,14 @@
 name: Gip Site Observer
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   observe:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,3 +21,4 @@ jobs:
         with:
           name: gip-site-packs
           path: site-packs/
+          retention-days: 30
