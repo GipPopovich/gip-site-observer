@@ -1,50 +1,13 @@
 {
   "defaults": {
-    "maxPagesPerSite": 1,
-    "timeoutMs": 45000,
+    "maxPagesPerSite": 500,
     "candidateTimeoutMs": 30000,
-    "waitAfterCommitMs": 2500,
-    "waitAfterLoadMs": 1000,
-    "includePatterns": [],
-    "excludePatterns": [
-      "/wp-admin",
-      "/wp-login",
-      "?add-to-cart=",
-      "/cart",
-      "/checkout",
-      "/my-account"
-    ]
+    "waitAfterLoadMs": 500
   },
   "sites": [
-    {"name":"FuturVibe Preview 01 home","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/"},
-    {"name":"FuturVibe Preview 02 notizie","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/notizie"},
-    {"name":"FuturVibe Preview 03 lavora-con-noi","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/lavora-con-noi"},
-    {"name":"FuturVibe Preview 04 servizi","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/servizi"},
-    {"name":"FuturVibe Preview 05 associazione","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/associazione"},
-    {"name":"FuturVibe Preview 06 everen-e-gip","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/everen-e-gip"},
-    {"name":"FuturVibe Preview 07 login","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/login"},
-    {"name":"FuturVibe Preview 08 registration","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/registration"},
-    {"name":"FuturVibe Preview 09 privacy-policy","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/privacy-policy"},
-    {"name":"FuturVibe Preview 10 cookie-policy","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/cookie-policy"},
-    {"name":"FuturVibe Preview 11 termini-e-condizioni","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/termini-e-condizioni"},
-    {"name":"FuturVibe Preview 12 rubrica-gip","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/rubrica-gip"},
-    {"name":"FuturVibe Preview 13 my-account","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/my-account"},
-    {"name":"FuturVibe Preview 14 futuro-intelligenza-artificiale-e-umanita-il-viaggio-che-cambia-tutto","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/futuro-intelligenza-artificiale-e-umanita-il-viaggio-che-cambia-tutto"},
-    {"name":"FuturVibe Preview 15 ai-e-mente-umana-somiglianze-svelate-dalla-scienza","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/ai-e-mente-umana-somiglianze-svelate-dalla-scienza"},
-    {"name":"FuturVibe Preview 16 le-mie-previsioni-si-avverano","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/le-mie-previsioni-si-avverano"},
-    {"name":"FuturVibe Preview 17 ai-employees-dipendenti-artificiali-aziende","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/ai-employees-dipendenti-artificiali-aziende"},
-    {"name":"FuturVibe Preview 18 5-branche-la-convergenza-che-sta-cambiando-tutto","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/5-branche-la-convergenza-che-sta-cambiando-tutto"},
-    {"name":"FuturVibe Preview 19 ai-infrastruttura-2026-non-e-piu-solo-software","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/ai-infrastruttura-2026-non-e-piu-solo-software"},
-    {"name":"FuturVibe Preview 20 ai-washing-licenziamenti-big-tech","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/ai-washing-licenziamenti-big-tech"},
-    {"name":"FuturVibe Preview 21 evo-2-ai-che-scrive-il-dna-apre-lera-della-biologia-programmabile","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/evo-2-ai-che-scrive-il-dna-apre-lera-della-biologia-programmabile"},
-    {"name":"FuturVibe Preview 22 agenti-ai-2026-il-software-lavora-da-solo","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/agenti-ai-2026-il-software-lavora-da-solo"},
-    {"name":"FuturVibe Preview 23 copilota-ai-viaggio","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/copilota-ai-viaggio"},
-    {"name":"FuturVibe Preview 24 invecchiamento-reversibile-2026-longevita","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/invecchiamento-reversibile-2026-longevita"},
-    {"name":"FuturVibe Preview 25 superapp-ai-openai-chatgpt-codex-browser","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/superapp-ai-openai-chatgpt-codex-browser"},
-    {"name":"FuturVibe Preview 26 medio-oriente-ai-energia-nuovo-ordine-geopolitico","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/medio-oriente-ai-energia-nuovo-ordine-geopolitico"},
-    {"name":"FuturVibe Preview 27 terapia-di-ringiovanimento-cellulare-2026-corsa-all-immortalita","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/terapia-di-ringiovanimento-cellulare-2026-corsa-all-immortalita"},
-    {"name":"FuturVibe Preview 28 ai-fisica-2026-robot-costruiscono-server-ai","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/ai-fisica-2026-robot-costruiscono-server-ai"},
-    {"name":"FuturVibe Preview 29 ai-comprime-il-tempo-della-scienza","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/ai-comprime-il-tempo-della-scienza"},
-    {"name":"FuturVibe Preview 30 disclamer","url":"https://mediumspringgreen-dogfish-919184.hostingersite.com/disclamer"}
+    {
+      "name": "FuturVibe Preview Full Text Crawl",
+      "url": "https://mediumspringgreen-dogfish-919184.hostingersite.com/"
+    }
   ]
 }
